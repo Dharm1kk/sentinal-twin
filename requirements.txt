@@ -1,0 +1,7 @@
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+networkx>=3.2
