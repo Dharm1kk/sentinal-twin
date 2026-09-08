@@ -1,0 +1,58 @@
+{
+  "ddos": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "c2": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "dga": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "dns_tunnel": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "recon": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "encrypted": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  },
+  "exfil": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0,
+    "best_threshold": 0.1
+  }
+}
