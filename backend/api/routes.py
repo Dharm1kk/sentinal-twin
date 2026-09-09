@@ -1,6 +1,6 @@
 """
 FastAPI Routes and Endpoints
-Strictly implements Section 20 of ARGUS 0 Specification.
+Strictly implements Section 20 of Sentinel Specification.
 Works purely on uploaded/generated datasets and PCAPs.
 All alerts, metrics, baselines, and topology are derived directly from the analyzed dataset.
 """

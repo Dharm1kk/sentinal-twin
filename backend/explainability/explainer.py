@@ -1,6 +1,6 @@
 """
 Deep Explainability and Grounded Incident Narrative Engine
-Implements Section 16 & 17 of ARGUS 0 Specification.
+Implements Section 16 & 17 of Sentinel Specification.
 Produces deep root-cause explanations explaining WHY an alert was triggered,
 what anomalous behavior was detected, which specific passive features deviated from baseline,
 why alternative hypotheses were rejected, and what containment steps are recommended.
