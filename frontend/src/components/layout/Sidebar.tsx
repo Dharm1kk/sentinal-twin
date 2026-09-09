@@ -5,9 +5,9 @@ import {
   Sparkles,
   GitMerge,
   Share2,
-  BrainCircuit
+  BrainCircuit,
+  X
 } from 'lucide-react';
-
 
 export type NavView = 'overview' | 'investigations' | 'evidence_graph' | 'novelty' | 'campaigns' | 'training';
 
@@ -17,6 +17,8 @@ interface SidebarProps {
   alertCount: number;
   novelCount: number;
   campaignCount: number;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,6 +27,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   alertCount,
   novelCount,
   campaignCount,
+  isOpen = false,
+  onClose
 }) => {
   const navItems: {
     key: NavView;
@@ -78,12 +82,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
-  return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 font-sans">
+  const handleNavClick = (view: NavView) => {
+    onSelectView(view);
+    if (onClose) onClose();
+  };
+
+  const navContent = (
+    <>
+      {/* Mobile drawer header with Close Button */}
+      <div className="lg:hidden flex items-center justify-between p-4 border-b border-slate-200">
+        <span className="font-bold text-sm text-slate-900 tracking-tight">NAVIGATION MENU</span>
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+          aria-label="Close navigation menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
       {/* Navigation Items */}
-      <nav className="p-3 space-y-1 flex-1">
+      <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-          Navigation
+          Console Navigation
         </div>
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -92,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <button
               key={item.key}
-              onClick={() => onSelectView(item.key)}
+              onClick={() => handleNavClick(item.key)}
               className={`w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between transition group cursor-pointer ${
                 isActive
                   ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200/80 shadow-xs'
@@ -134,6 +155,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="text-slate-600 text-[11px] font-mono">0 (Blocked)</span>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* 1. Desktop Static Sidebar (lg and above) */}
+      <aside className="hidden lg:flex w-64 bg-white border-r border-slate-200 flex-col shrink-0 font-sans">
+        {navContent}
+      </aside>
+
+      {/* 2. Mobile Responsive Slide-Over Drawer with Backdrop */}
+      {isOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop overlay */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-in fade-in"
+            onClick={onClose}
+          />
+
+          {/* Drawer panel */}
+          <aside className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl flex flex-col font-sans z-10 animate-in slide-in-from-left duration-200">
+            {navContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

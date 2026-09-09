@@ -212,26 +212,26 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       />
 
       {/* Main 2-Column Grid: Incidents Table + Threat Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         {/* Left Column: Active Incidents Table (2 cols) */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 shadow-xs space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 border-b border-slate-100 pb-3 sm:pb-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900">
                 Active Detections & Incident Triage
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                 Calibrated multi-detector alerts with SHA-256 cryptographic chain proof.
               </p>
             </div>
 
             {/* Severity Filter Chips */}
-            <div className="flex items-center gap-1 text-[11px] overflow-x-auto">
+            <div className="flex items-center gap-1 text-[11px] overflow-x-auto pb-1 max-w-full">
               {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((sev) => (
                 <button
                   key={sev}
                   onClick={() => setSeverityFilter(sev)}
-                  className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                  className={`px-2 sm:px-2.5 py-1 rounded-md font-medium transition cursor-pointer shrink-0 text-[10px] sm:text-xs ${
                     severityFilter === sev
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

@@ -246,29 +246,29 @@ export const TimelineAttackGraph: React.FC<TimelineAttackGraphProps> = ({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4 font-sans">
+    <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 shadow-xs space-y-3 sm:space-y-4 font-sans">
       {/* Header bar with controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Radio className="h-4 w-4 text-blue-600 animate-pulse" />
-            <h3 className="text-sm font-bold text-slate-900">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900">
               Chronological Attack Sequence & Timeline
             </h3>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
               {currentStep} of {totalSteps} Events
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
             Interactive timeline plotting detected threats across time. Scrub or step forward to observe attack progression.
           </p>
         </div>
 
         {/* Playback Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer ${
               isPlaying
                 ? 'bg-amber-600 hover:bg-amber-700 text-white'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -281,7 +281,7 @@ export const TimelineAttackGraph: React.FC<TimelineAttackGraphProps> = ({
           <button
             onClick={handleStepForward}
             disabled={currentStep >= totalSteps || isPlaying}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer"
             title="Step Forward"
           >
             <SkipForward className="h-3.5 w-3.5" />
@@ -290,7 +290,7 @@ export const TimelineAttackGraph: React.FC<TimelineAttackGraphProps> = ({
 
           <button
             onClick={handleReset}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-medium transition cursor-pointer"
             title="Reset to Full Timeline"
           >
             <RotateCcw className="h-3.5 w-3.5 text-slate-400" />
@@ -298,7 +298,7 @@ export const TimelineAttackGraph: React.FC<TimelineAttackGraphProps> = ({
           </button>
 
           {/* Speed Selector */}
-          <div className="hidden sm:flex items-center gap-1 pl-1 border-l border-slate-200 text-xs">
+          <div className="flex items-center gap-1 pl-1 border-l border-slate-200 text-xs">
             {[1, 2, 4].map((s) => (
               <button
                 key={s}
@@ -317,15 +317,15 @@ export const TimelineAttackGraph: React.FC<TimelineAttackGraphProps> = ({
       </div>
 
       {/* Scrubber Range Slider */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex items-center gap-4">
-        <Sliders className="h-4 w-4 text-slate-400 shrink-0" />
-        <div className="flex-1 flex flex-col gap-1">
-          <div className="flex justify-between items-center text-[11px]">
-            <span className="text-slate-500">
-              Timeline Position: <strong className="text-slate-800 font-mono">Event #{currentStep}</strong>
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 sm:px-4 sm:py-2.5 flex items-center gap-2.5 sm:gap-4">
+        <Sliders className="h-4 w-4 text-slate-400 shrink-0 hidden xs:block" />
+        <div className="flex-1 flex flex-col gap-1 min-w-0">
+          <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center text-[11px] gap-0.5">
+            <span className="text-slate-500 truncate">
+              Position: <strong className="text-slate-800 font-mono">#{currentStep}</strong>
               {activeAlert && (
-                <span className="ml-2 text-blue-700 font-semibold font-mono">
-                  ({activeAlert.alert_id} - {CATEGORY_LABELS[activeAlert.type] || activeAlert.type} on {activeAlert.host})
+                <span className="ml-1.5 text-blue-700 font-semibold font-mono text-[10px] sm:text-[11px]">
+                  ({activeAlert.alert_id} - {CATEGORY_LABELS[activeAlert.type] || activeAlert.type})
                 </span>
               )}
             </span>

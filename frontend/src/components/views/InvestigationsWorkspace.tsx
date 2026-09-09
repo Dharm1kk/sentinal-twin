@@ -242,7 +242,7 @@ export const InvestigationsWorkspace: React.FC<InvestigationsWorkspaceProps> = (
             </div>
 
             {/* Forensic Sub-Tabs */}
-            <div className="border-b border-slate-200 px-4 flex items-center gap-2 bg-slate-50 text-xs overflow-x-auto">
+            <div className="border-b border-slate-200 px-3 sm:px-4 flex items-center gap-1 sm:gap-2 bg-slate-50 text-xs overflow-x-auto no-scrollbar scroll-smooth">
               {[
                 { key: 'overview', label: 'Incident Summary', icon: FileText },
                 { key: 'evidence', label: 'Signal Evidence', icon: HelpCircle },
@@ -251,14 +251,13 @@ export const InvestigationsWorkspace: React.FC<InvestigationsWorkspaceProps> = (
                 { key: 'graph', label: 'Topology Subgraph', icon: Share2 },
                 { key: 'blockchain', label: 'SHA-256 Ledger', icon: Lock },
               ].map((t) => {
-
                 const Icon = t.icon;
                 const isActive = activeSubTab === t.key;
                 return (
                   <button
                     key={t.key}
                     onClick={() => setActiveSubTab(t.key as SubTab)}
-                    className={`py-2.5 px-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer font-medium ${
+                    className={`py-2.5 px-2.5 sm:px-3 flex items-center gap-1.5 border-b-2 transition cursor-pointer font-medium whitespace-nowrap shrink-0 ${
                       isActive
                         ? 'border-blue-600 text-blue-700 font-bold bg-white'
                         : 'border-transparent text-slate-500 hover:text-slate-700'

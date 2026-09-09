@@ -48,6 +48,7 @@ export const App: React.FC = () => {
   const selectedAlertIdRef = useRef<string | null>(null);
   const [jsonModalAlert, setJsonModalAlert] = useState<Alert | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const loadData = async () => {
     try {
@@ -140,6 +141,8 @@ export const App: React.FC = () => {
         onOpenUpload={() => setActiveView('training')}
         onAnalyzeDataset={handleAnalyzeDataset}
         isProcessing={isProcessing}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
       />
 
       {/* Main Body: Sidebar + Workspace Canvas */}
@@ -150,9 +153,11 @@ export const App: React.FC = () => {
           alertCount={alerts.length}
           novelCount={novelCount}
           campaignCount={campaigns.length}
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
         />
 
-        <main className="flex-1 p-6 overflow-y-auto bg-slate-50">
+        <main className="flex-1 p-3.5 sm:p-6 overflow-y-auto bg-slate-50">
           <div className="max-w-7xl mx-auto">
             {activeView === 'overview' && (
               <OverviewTab
