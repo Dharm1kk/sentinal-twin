@@ -234,14 +234,28 @@ class PipelineState:
 state = PipelineState()
 state.load_from_db()
 
-# If state has no alerts on startup but dataset exists, auto-analyze so data is immediately available
-default_csv = os.path.join(DATASET_DIR, "argus_dataset.csv")
-if len(state.alerts) == 0 and os.path.exists(default_csv):
-    try:
-        _init_df = pd.read_csv(default_csv)
-        analyze_dataset_records(_init_df, "argus_dataset.csv")
-    except Exception as _e:
-        print(f"Startup dataset auto-analysis failed: {_e}")
+# If state has no alerts on startup, try to auto-analyze the most recent dataset
+if len(state.alerts) == 0:
+    _startup_csv = None
+    for _cand in ["sentinel_dataset.csv", "argus_dataset.csv"]:
+        _cand_path = os.path.join(DATASET_DIR, _cand)
+        if os.path.exists(_cand_path):
+            _startup_csv = _cand_path
+            break
+    if not _startup_csv:
+        _csvs = sorted(
+            [f for f in os.listdir(DATASET_DIR) if f.endswith(".csv")],
+            key=lambda f: os.path.getmtime(os.path.join(DATASET_DIR, f)),
+            reverse=True
+        )
+        if _csvs:
+            _startup_csv = os.path.join(DATASET_DIR, _csvs[0])
+    if _startup_csv:
+        try:
+            _init_df = pd.read_csv(_startup_csv)
+            analyze_dataset_records(_init_df, os.path.basename(_startup_csv))
+        except Exception as _e:
+            print(f"Startup dataset auto-analysis failed: {_e}")
 
 
 def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any]:
@@ -568,13 +582,26 @@ async def analyze_dataset(body: Optional[dict] = Body(default=None)):
     """
     csv_path = body.get("csv_path") if isinstance(body, dict) else None
     if not csv_path:
-        csv_path = os.path.join(DATASET_DIR, "argus_dataset.csv")
+        # Smart discovery: most recently modified uploaded or generated CSV
+        for candidate in ["sentinel_dataset.csv", "argus_dataset.csv"]:
+            _cand = os.path.join(DATASET_DIR, candidate)
+            if os.path.exists(_cand):
+                csv_path = _cand
+                break
+        if not csv_path:
+            uploads = sorted(
+                [f for f in os.listdir(DATASET_DIR) if f.endswith(".csv")],
+                key=lambda f: os.path.getmtime(os.path.join(DATASET_DIR, f)),
+                reverse=True
+            )
+            if uploads:
+                csv_path = os.path.join(DATASET_DIR, uploads[0])
 
-    if not os.path.exists(csv_path):
-        # Auto-generate if missing
-        from backend.ml.dataset_generator import generate_dataset
-        gen_res = generate_dataset(csv_path)
-        csv_path = gen_res["path"]
+    if not csv_path or not os.path.exists(csv_path):
+        raise HTTPException(
+            status_code=404,
+            detail="No dataset available. Please generate or upload a dataset first."
+        )
 
     try:
         df = pd.read_csv(csv_path)
@@ -889,9 +916,28 @@ async def upload_training_dataset(file: UploadFile = File(...)):
 @router.post("/train/run")
 async def run_model_training(background_tasks: BackgroundTasks, body: Optional[dict] = Body(default=None)):
     """Starts the IF->XGB training pipeline on the given CSV path."""
-    csv_path = (body or {}).get("csv_path", os.path.join(DATASET_DIR, "argus_dataset.csv"))
-    if not os.path.exists(csv_path):
-        raise HTTPException(status_code=400, detail=f"Dataset not found at {csv_path}. Generate or upload a dataset first.")
+    _body = body or {}
+    csv_path = _body.get("csv_path")
+    if not csv_path:
+        for candidate in ["sentinel_dataset.csv", "argus_dataset.csv"]:
+            _cand = os.path.join(DATASET_DIR, candidate)
+            if os.path.exists(_cand):
+                csv_path = _cand
+                break
+        if not csv_path:
+            uploads = sorted(
+                [f for f in os.listdir(DATASET_DIR) if f.startswith("uploaded_") and f.endswith(".csv")],
+                key=lambda f: os.path.getmtime(os.path.join(DATASET_DIR, f)),
+                reverse=True
+            )
+            if uploads:
+                csv_path = os.path.join(DATASET_DIR, uploads[0])
+
+    if not csv_path or not os.path.exists(csv_path):
+        raise HTTPException(
+            status_code=400,
+            detail="No dataset found. Please generate or upload a dataset first."
+        )
 
     job_id = f"train-{str(uuid.uuid4())[:8]}"
     TRAINING_JOBS[job_id] = {
@@ -901,7 +947,8 @@ async def run_model_training(background_tasks: BackgroundTasks, body: Optional[d
         "step_name": "Initializing pipeline",
         "progress_pct": 0,
         "metrics": {},
-        "started_at": time.time()
+        "started_at": time.time(),
+        "csv_path": csv_path
     }
 
     def progress_callback(step: int, name: str, pct: int, metrics: dict):
@@ -912,20 +959,26 @@ async def run_model_training(background_tasks: BackgroundTasks, body: Optional[d
             "metrics": metrics
         })
 
+    _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
     def _run():
+        import sys as _sys
+        if _project_root not in _sys.path:
+            _sys.path.insert(0, _project_root)
         try:
-            from ml.training import run_training_pipeline
+            from ml.training.train_specialists import run_training_pipeline
             result = run_training_pipeline(csv_path, progress_callback)
             TRAINING_JOBS[job_id]["status"] = "completed"
             TRAINING_JOBS[job_id]["result"] = result
-            # Reload detectors with newly trained models
             state.detectors = DetectorSuite()
         except Exception as e:
+            import traceback as _tb
             TRAINING_JOBS[job_id]["status"] = "error"
             TRAINING_JOBS[job_id]["error"] = str(e)
+            TRAINING_JOBS[job_id]["traceback"] = _tb.format_exc()
 
     background_tasks.add_task(_run)
-    return {"job_id": job_id, "status": "running"}
+    return {"job_id": job_id, "status": "running", "csv_path": csv_path}
 
 
 @router.get("/train/status/{job_id}")
@@ -979,11 +1032,21 @@ async def start_dataset_replay(body: Optional[dict] = Body(default=None)):
     """
     csv_path = body.get("csv_path") if isinstance(body, dict) else None
     if not csv_path:
-        csv_path = os.path.join(DATASET_DIR, "argus_dataset.csv")
-    if not os.path.exists(csv_path):
-        from backend.ml.dataset_generator import generate_dataset
-        gen_res = generate_dataset(csv_path)
-        csv_path = gen_res["path"]
+        for _cand in ["sentinel_dataset.csv", "argus_dataset.csv"]:
+            _cand_path = os.path.join(DATASET_DIR, _cand)
+            if os.path.exists(_cand_path):
+                csv_path = _cand_path
+                break
+        if not csv_path:
+            _csvs = sorted(
+                [f for f in os.listdir(DATASET_DIR) if f.endswith(".csv")],
+                key=lambda f: os.path.getmtime(os.path.join(DATASET_DIR, f)),
+                reverse=True
+            )
+            if _csvs:
+                csv_path = os.path.join(DATASET_DIR, _csvs[0])
+    if not csv_path or not os.path.exists(csv_path):
+        raise HTTPException(status_code=404, detail="No dataset available. Please generate or upload a dataset first.")
 
     if not state.alerts:
         df = pd.read_csv(csv_path)
@@ -1057,9 +1120,24 @@ async def get_replay_timeline():
     """
     Returns the complete chronological attack timeline events.
     """
-    if not state.alerts and os.path.exists(os.path.join(DATASET_DIR, "argus_dataset.csv")):
-        df = pd.read_csv(os.path.join(DATASET_DIR, "argus_dataset.csv"))
-        analyze_dataset_records(df, source_name="argus_dataset.csv")
+    if not state.alerts:
+        _tl_csv = None
+        for _cand in ["sentinel_dataset.csv", "argus_dataset.csv"]:
+            _cand_path = os.path.join(DATASET_DIR, _cand)
+            if os.path.exists(_cand_path):
+                _tl_csv = _cand_path
+                break
+        if not _tl_csv:
+            _csvs = sorted(
+                [f for f in os.listdir(DATASET_DIR) if f.endswith(".csv")],
+                key=lambda f: os.path.getmtime(os.path.join(DATASET_DIR, f)),
+                reverse=True
+            )
+            if _csvs:
+                _tl_csv = os.path.join(DATASET_DIR, _csvs[0])
+        if _tl_csv:
+            _df = pd.read_csv(_tl_csv)
+            analyze_dataset_records(_df, source_name=os.path.basename(_tl_csv))
 
     timeline_events = [
         {

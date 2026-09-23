@@ -5,7 +5,7 @@ import pandas as pd
 
 def generate_dataset(output_path: str = None) -> dict:
     if output_path is None:
-        output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/argus_dataset.csv'))
+        output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/sentinel_dataset.csv'))
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
