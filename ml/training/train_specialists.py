@@ -8,6 +8,7 @@ Phase 2: Per-specialist IF scoring -- each specialist uses a feature-weighted an
 Phase 3: XGBoost trains on IF-derived labels; evaluated on held-out ground-truth.
 """
 import sys, os, joblib, json
+from typing import Tuple, Dict, Any, List
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
@@ -108,24 +109,84 @@ def _weighted_if_labels(iso: IsolationForest, X: np.ndarray,
     return (raw_scores < threshold).astype(int), raw_scores
 
 
+def _derive_unsupervised_labels(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Derives unsupervised pseudo-labels when the CSV contains no 'label' column.
+    Separates normal baseline flows vs threat patterns using statistical clustering & feature heuristics.
+    Returns:
+        benign_mask: bool array where True = normal baseline flow
+        pseudo_labels: integer array (0 = benign, 1..7 = specialist threat families, 8 = novel anomaly)
+    """
+    total = len(df)
+    pseudo_labels = np.zeros(total, dtype=int)
+
+    X_raw = df[FEATURE_COLUMNS].values
+    quick_iso = IsolationForest(n_estimators=100, contamination=0.15, random_state=42, n_jobs=-1)
+    scores = quick_iso.fit_predict(X_raw)
+    anomaly_indices = np.where(scores == -1)[0]
+
+    for idx in anomaly_indices:
+        row = df.iloc[idx]
+        pkt_rate = float(row.get("packet_rate", 0))
+        syn_ratio = float(row.get("syn_only_ratio", 0))
+        cv_iat = float(row.get("cv_iat", 1.0))
+        timing_reg = float(row.get("timing_regularity", 0))
+        dns_ent = float(row.get("dns_mean_entropy", 0))
+        dns_qrate = float(row.get("dns_query_rate", 0))
+        dns_qlen = float(row.get("dns_mean_query_length", 0))
+        ports_sec = float(row.get("ports_per_sec", 0))
+        has_tls = int(row.get("has_tls", 0))
+        tls_susp = float(row.get("tls_suspicion_score", 0))
+        exfil_ratio = float(row.get("exfil_byte_ratio", 0))
+
+        if pkt_rate > 500 or syn_ratio > 0.6:
+            pseudo_labels[idx] = 1  # DDoS
+        elif timing_reg > 0.75 or cv_iat < 0.2:
+            pseudo_labels[idx] = 2  # C2
+        elif dns_ent > 3.5:
+            pseudo_labels[idx] = 3  # DGA
+        elif dns_qrate > 8.0 or dns_qlen > 40.0:
+            pseudo_labels[idx] = 4  # DNS Tunnel
+        elif ports_sec > 30.0:
+            pseudo_labels[idx] = 5  # Recon
+        elif has_tls and tls_susp > 0.6:
+            pseudo_labels[idx] = 6  # Encrypted Malware
+        elif exfil_ratio > 5.0:
+            pseudo_labels[idx] = 7  # Exfiltration
+        else:
+            pseudo_labels[idx] = 8  # Novel Anomaly
+
+    benign_mask = (pseudo_labels == 0)
+    return benign_mask, pseudo_labels
+
+
 def run_training_pipeline(csv_path: str, progress_callback=None) -> dict:
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(EVAL_DIR, exist_ok=True)
 
     # ── Step 1: Load dataset ──────────────────────────────────────────────────
     df = pd.read_csv(csv_path)
-    missing = [c for c in FEATURE_COLUMNS + ['label'] if c not in df.columns]
+    missing = [c for c in FEATURE_COLUMNS if c not in df.columns]
     if missing:
-        raise ValueError(f"CSV is missing required columns: {missing}")
+        raise ValueError(f"CSV is missing required feature columns: {missing[:10]}")
 
-    benign_mask = (df['label'] == 0).values
+    if 'label' in df.columns:
+        benign_mask = (df['label'] == 0).values
+        y_gt = df['label'].values
+        n_per_class = {int(k): int(v) for k, v in df['label'].value_counts().to_dict().items()}
+        mode_str = f"{len(n_per_class)} classes"
+    else:
+        # Autonomous Unsupervised Mode: derive pseudo-labels for specialist training
+        benign_mask, y_gt = _derive_unsupervised_labels(df)
+        df['label'] = y_gt
+        n_per_class = {int(k): int(v) for k, v in pd.Series(y_gt).value_counts().to_dict().items()}
+        mode_str = "Unsupervised Pseudo-Labeling"
+
     X_benign = df[benign_mask][FEATURE_COLUMNS].values
     X_all    = df[FEATURE_COLUMNS].values
-    y_gt     = df['label'].values
 
-    n_per_class = {int(k): int(v) for k, v in df['label'].value_counts().to_dict().items()}
     if progress_callback:
-        progress_callback(1, 'Dataset loaded - {:,} rows, {} classes'.format(len(df), len(n_per_class)), 10,
+        progress_callback(1, f'Dataset loaded - {len(df):,} rows ({mode_str})', 10,
                           {'rows': len(df), 'classes': n_per_class})
 
     # -- Step 2: Train IsolationForest on benign-only --------------------------
