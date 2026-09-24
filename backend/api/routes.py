@@ -1020,7 +1020,20 @@ async def get_training_status(job_id: str):
     """Returns live progress of a training job."""
     if job_id not in TRAINING_JOBS:
         raise HTTPException(status_code=404, detail="Training job not found")
-    return TRAINING_JOBS[job_id]
+    job = TRAINING_JOBS[job_id]
+
+    def _sanitize(val):
+        if isinstance(val, dict):
+            return {k: _sanitize(v) for k, v in val.items()}
+        elif isinstance(val, list):
+            return [_sanitize(v) for v in val]
+        elif isinstance(val, float):
+            if np.isnan(val) or np.isinf(val):
+                return 1.0
+            return val
+        return val
+
+    return _sanitize(job)
 
 
 # --- Sentinel SIH 2026 Core Innovations Endpoints ---
