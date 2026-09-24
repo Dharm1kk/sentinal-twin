@@ -262,6 +262,8 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
     """
     Runs the full Sentinel detection, baseline, fusion, risk, and explainability pipeline
     across all rows of an uploaded or generated dataset CSV.
+    Evaluates traffic autonomously through trained models (Isolation Forest + 7 Specialists + GRU + Fusion Engine).
+    No ground-truth labels required.
     """
     state.clear()
     state.detectors = DetectorSuite()
@@ -284,47 +286,30 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
     new_alerts = []
 
     try:
-        # 1. First pass: establish benign baselines for all hosts
-        benign_rows = df[df.get("label", 0) == 0] if "label" in df.columns else df.head(min(500, total_rows))
-        benign_sample = benign_rows.sample(n=min(200, len(benign_rows)), random_state=42) if len(benign_rows) > 200 else benign_rows
-        for idx, row in benign_sample.iterrows():
-            host = host_pool[idx % len(host_pool)]
+        # 1. First pass: establish initial baseline profiles for hosts
+        baseline_sample_size = min(300, total_rows)
+        for idx in range(baseline_sample_size):
+            row = df.iloc[idx]
+            host = str(row.get("src_ip", host_pool[idx % len(host_pool)]))
             feats_dict = {col: float(row.get(col, 0.0)) for col in FEATURE_COLUMNS}
             state.baseline_mgr.update_host(host, feats_dict)
 
-
-        # 2. Second pass: evaluate sample windows across classes
-        # Sample representative rows across attack and novel classes
-        classes_present = df["class_name"].unique() if "class_name" in df.columns else ["benign"]
-        
-        sample_indices = []
-        if "label" in df.columns:
-            for cls_val in sorted(df["label"].unique()):
-                cls_df = df[df["label"] == cls_val]
-                if len(cls_df) == 0:
-                    continue
-                # Sample up to 6 representative rows per threat class safely
-                n_sample = min(2, len(cls_df)) if cls_val == 0 else min(6, len(cls_df))
-                sample_indices.extend(cls_df.sample(n=n_sample, random_state=42).index.tolist())
-        else:
-            sample_indices = list(range(min(40, len(df))))
-
-        # Sort indices to preserve chronological timeline flow
-        sample_indices.sort()
-
+        # 2. Second pass: evaluate the traffic stream through the AI detection models
         host_flow_history: Dict[str, List[np.ndarray]] = {}
         now = time.time()
-        for i, row_idx in enumerate(sample_indices):
-            row = df.loc[row_idx]
-            label_val = int(row.get("label", 0))
-            class_name = str(row.get("class_name", "benign"))
-            
-            # Pick a consistent host based on class/index
-            host = host_pool[(label_val + i) % len(host_pool)]
+
+        eval_indices = list(range(total_rows))
+        if total_rows > 300:
+            step = max(1, total_rows // 250)
+            eval_indices = list(range(0, total_rows, step))
+
+        for i, row_idx in enumerate(eval_indices):
+            row = df.iloc[row_idx]
+            host = str(row.get("src_ip", host_pool[i % len(host_pool)]))
             feats_dict = {col: float(row.get(col, 0.0)) for col in FEATURE_COLUMNS}
             feats_vec = to_numpy_vector(feats_dict)
 
-            # GRU sequential pattern detection (Slide 2 & 3: GRU-based RNN behavioral patterns)
+            # GRU sequential pattern detection
             hist = host_flow_history.setdefault(host, [])
             hist.append(feats_vec)
             if len(hist) > 10:
@@ -336,38 +321,25 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
             base_res = state.baseline_mgr.update_host(host, feats_dict)
             base_dev = base_res["composite_baseline_deviation"]
 
-            # Specialists + Novelty evaluation
+            # Autonomous ML Evaluation: Isolation Forest + 7 Specialist Classifiers
             det_res = state.detectors.evaluate_all(feats_vec, feats_dict)
             threat_scores = det_res["threat_scores"]
             evidence_maps = det_res["evidence_maps"]
             novelty_score = det_res["novelty_score"]
 
-            # Fuse evidence incorporating GRU sequential score
+            # Fuse evidence incorporating temporal & sequential scores
             top_threat, top_conf, hyps, ev_items = state.fusion_engine.fuse(
                 threat_scores=threat_scores,
                 evidence_maps=evidence_maps,
                 baseline_deviation=base_dev,
-                temporal_score=max(0.60, gru_score),
+                temporal_score=max(0.40, gru_score),
                 graph_score=0.40,
                 novelty_score=novelty_score,
                 features_dict=feats_dict
             )
 
-            # Check if this row is zero-day novel anomaly
-            if label_val == 8 or class_name == "novel_anomaly":
-                top_threat = "NOVEL_BEHAVIOUR"
-                novelty_score = max(novelty_score, 0.85)
-                top_conf = 0.78
-                if not ev_items:
-                    ev_items = [
-                        EvidenceItem(feature="dns_mean_entropy", value=round(feats_dict.get("dns_mean_entropy", 3.45), 2), impact=0.45),
-                        EvidenceItem(feature="exfil_byte_ratio", value=round(feats_dict.get("exfil_byte_ratio", 3.2), 2), impact=0.38),
-                        EvidenceItem(feature="timing_regularity", value=round(feats_dict.get("timing_regularity", 0.52), 2), impact=0.34)
-                    ]
-                hyps = [Hypothesis(type="NOVEL_BEHAVIOUR", score=top_conf)] + [h for h in hyps if h.type != "NOVEL_BEHAVIOUR"][:3]
-
-            # Timestamp staggered backwards
-            ts = now - (len(sample_indices) - i) * 60
+            # Timestamp staggered backwards chronologically
+            ts = now - (len(eval_indices) - i) * 60
 
             # Update temporal tracking
             calibrated_conf = state.temporal_engine.update_confidence(
@@ -377,9 +349,15 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
                 timestamp=ts
             )
 
-            # Trigger alert condition (attacks or strong novelty)
-            is_anomaly = label_val != 0 or novelty_score > 0.60 or calibrated_conf > 0.35
-            if is_anomaly:
+            # Trigger alert autonomously when AI detects anomaly/threat
+            is_anomaly = (
+                novelty_score >= 0.55 or
+                calibrated_conf >= 0.38 or
+                any(p >= 0.45 for p in threat_scores.values()) or
+                (base_dev > 0.70 and gru_score > 0.60)
+            )
+
+            if is_anomaly and top_threat != "BENIGN":
                 risk_score, severity, _ = state.risk_engine.calculate_risk(
                     threat_confidence=calibrated_conf,
                     baseline_deviation=base_dev,
@@ -412,13 +390,13 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
                 )
 
                 # Select realistic related entities
-                ext_ip = external_c2[i % len(external_c2)] if "C2" in top_threat or "EXFIL" in top_threat else external_dns[i % len(external_dns)]
+                ext_ip = external_c2[i % len(external_c2)] if ("C2" in top_threat or "EXFIL" in top_threat) else external_dns[i % len(external_dns)]
                 related_entities = [host, ext_ip]
 
                 alert_id = f"SNT-{len(new_alerts) + 1:05d}"
                 iso_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
 
-                # Cryptographic SHA-256 Tamper-Evident Ledger Block (Slide 2 & 3)
+                # Cryptographic SHA-256 Tamper-Evident Ledger Block
                 ledger_record = state.ledger.record_alert(
                     alert_id=alert_id,
                     timestamp=iso_ts,
@@ -455,7 +433,7 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
                 state.graph.add_flow_observation(
                     src_ip=host,
                     dst_ip=ext_ip,
-                    dst_port=443 if "TLS" in top_threat or "ENCRYPTED" in top_threat else (53 if "DNS" in top_threat else 8080),
+                    dst_port=443 if ("TLS" in top_threat or "ENCRYPTED" in top_threat) else (53 if "DNS" in top_threat else 8080),
                     protocol="UDP" if "DNS" in top_threat else "TCP",
                     timestamp=ts,
                     threat_type=top_threat,
@@ -486,7 +464,6 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
         # 3. Discover attack campaigns
         discovered_campaigns = state.graph.evaluate_campaigns(new_alerts)
         for camp in discovered_campaigns:
-
             db_camp = CampaignRecord(
                 campaign_id=camp["campaign_id"],
                 host_ip=camp["host"],
@@ -510,9 +487,7 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
                     risk_score=max([a["risk"] for a in new_alerts if a["host"] == h_ip], default=15),
                     baseline_profile_json=json.dumps(prof)
                 )
-
                 db.merge(db_h)
-
 
         db.commit()
 
@@ -573,6 +548,65 @@ def analyze_dataset_records(df: pd.DataFrame, source_name: str) -> Dict[str, Any
 
 
 # --- Real Dataset Analysis Endpoints ---
+
+@router.post("/dataset/generate-unlabelled")
+async def generate_unlabelled_stream():
+    """
+    Generates a live stream of raw unlabelled network flow features (34 features, no ground-truth label).
+    Analyzes it directly through the autonomous AI detection pipeline.
+    """
+    try:
+        from backend.ml.dataset_generator import generate_unlabelled_traffic
+        res = generate_unlabelled_traffic()
+        df = pd.read_csv(res["path"])
+        analysis = analyze_dataset_records(df, source_name="sentinel_unlabelled_traffic.csv")
+        return {
+            "status": "completed",
+            "path": res["path"],
+            "rows": res["rows"],
+            "is_unlabelled": True,
+            "alerts_generated": len(state.alerts),
+            "campaigns_found": len(state.graph.campaigns),
+            "dataset_info": analysis.get("dataset_info")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/dataset/upload-unlabelled")
+async def upload_unlabelled_dataset(file: UploadFile = File(...)):
+    """
+    Accepts raw unlabelled network CSV (only requires canonical feature columns, NO 'label' required).
+    Saves and immediately analyzes the unlabelled traffic.
+    """
+    content = await file.read()
+    save_path = os.path.join(DATASET_DIR, f"uploaded_unlabelled_{file.filename}")
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    try:
+        import io
+        df = pd.read_csv(io.BytesIO(content))
+        # Validate that at least the core flow features are present
+        missing = [c for c in FEATURE_COLUMNS if c not in df.columns]
+        if missing and len(missing) > 5:
+            raise HTTPException(status_code=400, detail=f"Missing feature columns: {missing[:10]}")
+
+        # Run full detection & fusion pipeline autonomously
+        analysis = analyze_dataset_records(df, source_name=f"uploaded_{file.filename}")
+        return {
+            "path": save_path,
+            "rows": len(df),
+            "is_unlabelled": True,
+            "alerts_generated": len(state.alerts),
+            "campaigns_found": len(state.graph.campaigns),
+            "dataset_info": analysis.get("dataset_info")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process unlabelled CSV: {str(e)}")
+
 
 @router.post("/dataset/analyze")
 async def analyze_dataset(body: Optional[dict] = Body(default=None)):

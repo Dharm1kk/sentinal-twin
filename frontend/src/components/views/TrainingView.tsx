@@ -8,10 +8,12 @@ import {
   AlertCircle,
   Play,
   Database,
-  ShieldCheck
+  ShieldCheck,
+  Zap,
+  Radio
 } from 'lucide-react';
 
-import { analyzeDataset } from '../../api/client';
+import { analyzeDataset, generateUnlabelledTraffic, uploadUnlabelledDataset } from '../../api/client';
 
 interface ClassDist {
   [key: string]: number;
@@ -67,6 +69,47 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onDatasetAnalyzed })
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const unlabelledFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleGenerateUnlabelled = async () => {
+    setDatasetLoading(true);
+    setDatasetError(null);
+    setAnalyzeSuccess(null);
+    try {
+      const data = await generateUnlabelledTraffic();
+      setDatasetInfo({
+        path: data.path,
+        rows: data.rows,
+        class_distribution: { 'Autonomous AI Inferred Traffic (Zero Ground-Truth Labels)': data.rows }
+      });
+      setAnalyzeSuccess(`Generated & analyzed ${data.rows.toLocaleString()} unlabelled flows! ${data.alerts_generated} alerts and ${data.campaigns_found} campaigns detected by AI.`);
+      if (onDatasetAnalyzed) onDatasetAnalyzed();
+    } catch (e: any) {
+      setDatasetError(e.message);
+    } finally {
+      setDatasetLoading(false);
+    }
+  };
+
+  const handleUploadUnlabelled = async (file: File) => {
+    setDatasetLoading(true);
+    setDatasetError(null);
+    setAnalyzeSuccess(null);
+    try {
+      const data = await uploadUnlabelledDataset(file);
+      setDatasetInfo({
+        path: data.path,
+        rows: data.rows,
+        class_distribution: { 'Uploaded Raw Unlabelled Traffic': data.rows }
+      });
+      setAnalyzeSuccess(`Ingested & analyzed unlabelled file! ${data.alerts_generated} alerts and ${data.campaigns_found} campaigns identified autonomously.`);
+      if (onDatasetAnalyzed) onDatasetAnalyzed();
+    } catch (e: any) {
+      setDatasetError(e.message);
+    } finally {
+      setDatasetLoading(false);
+    }
+  };
 
   const handleGenerateDataset = async () => {
     setDatasetLoading(true);
@@ -202,7 +245,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onDatasetAnalyzed })
           Dataset Management & Model Studio
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Upload traffic datasets, run the unsupervised-to-supervised Isolation Forest + XGBoost training pipeline, and analyze datasets in the SOC console.
+          Generate live unlabelled traffic for autonomous AI inference, or train the Isolation Forest + XGBoost specialist ensemble.
         </p>
       </div>
 
@@ -210,43 +253,92 @@ export const TrainingView: React.FC<TrainingViewProps> = ({ onDatasetAnalyzed })
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">1. Dataset Selection</h2>
+            <h2 className="text-sm font-bold text-slate-900">1. Traffic Ingestion & Dataset Selection</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Select or upload a CSV dataset containing the 35 canonical Sentinel traffic features.
+              Select raw unlabelled traffic for autonomous AI detection, or generate a benchmark to train models.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleGenerateDataset}
-            disabled={datasetLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
-          >
-            {datasetLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-            Generate Benchmark Dataset (10,800 Rows)
-          </button>
+        {/* Action Buttons Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Unlabelled Live Mode */}
+          <div className="p-4 rounded-lg bg-emerald-50/50 border border-emerald-200 space-y-2.5">
+            <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+              <Radio className="h-4 w-4 text-emerald-600" />
+              Autonomous Inference Mode (Unlabelled)
+            </div>
+            <p className="text-[11px] text-emerald-700 leading-relaxed">
+              Feeds raw 34-feature network flows without ground-truth labels. The AI models independently categorize threats, zero-days, and risk.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={handleGenerateUnlabelled}
+                disabled={datasetLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold rounded-md transition cursor-pointer"
+              >
+                {datasetLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                Generate Live Unlabelled Stream
+              </button>
+              <button
+                onClick={() => unlabelledFileInputRef.current?.click()}
+                disabled={datasetLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-50 disabled:opacity-50 text-emerald-800 text-xs font-semibold rounded-md transition cursor-pointer"
+              >
+                <Upload className="h-3.5 w-3.5 text-emerald-600" />
+                Upload Unlabelled CSV
+              </button>
+              <input
+                ref={unlabelledFileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) handleUploadUnlabelled(e.target.files[0]);
+                }}
+              />
+            </div>
+          </div>
 
-          <span className="text-xs text-slate-400 font-medium">or</span>
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={datasetLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
-          >
-            <Upload className="h-4 w-4 text-slate-500" />
-            Upload Custom CSV
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files?.[0]) handleUploadDataset(e.target.files[0]);
-            }}
-          />
+          {/* Training Benchmark Mode */}
+          <div className="p-4 rounded-lg bg-blue-50/50 border border-blue-200 space-y-2.5">
+            <div className="flex items-center gap-2 text-blue-800 font-bold text-xs">
+              <BrainCircuit className="h-4 w-4 text-blue-600" />
+              Specialist Training Mode (Labeled Benchmark)
+            </div>
+            <p className="text-[11px] text-blue-700 leading-relaxed">
+              Provides enclave traffic distributions used to train the Isolation Forest baseline and the 7 XGBoost threat specialists.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={handleGenerateDataset}
+                disabled={datasetLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-md transition cursor-pointer"
+              >
+                {datasetLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+                Generate Training Benchmark (11,400 Rows)
+              </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={datasetLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-300 hover:bg-blue-50 disabled:opacity-50 text-blue-800 text-xs font-semibold rounded-md transition cursor-pointer"
+              >
+                <Upload className="h-3.5 w-3.5 text-blue-600" />
+                Upload Labeled CSV
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) handleUploadDataset(e.target.files[0]);
+                }}
+              />
+            </div>
+          </div>
         </div>
+
 
         {datasetError && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">

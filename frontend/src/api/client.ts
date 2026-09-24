@@ -221,4 +221,31 @@ export async function fetchReplayTimeline(): Promise<{
   return res.json();
 }
 
+export async function generateUnlabelledTraffic(): Promise<{
+  status: string;
+  path: string;
+  rows: number;
+  is_unlabelled: boolean;
+  alerts_generated: number;
+  campaigns_found: number;
+  dataset_info: any;
+}> {
+  const res = await fetch(`${API_BASE}/dataset/generate-unlabelled`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to generate and analyze unlabelled traffic');
+  return res.json();
+}
 
+export async function uploadUnlabelledDataset(file: File): Promise<{
+  path: string;
+  rows: number;
+  is_unlabelled: boolean;
+  alerts_generated: number;
+  campaigns_found: number;
+  dataset_info: any;
+}> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_BASE}/dataset/upload-unlabelled`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error('Failed to upload and analyze unlabelled dataset');
+  return res.json();
+}

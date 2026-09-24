@@ -158,3 +158,33 @@ def generate_dataset(output_path: str = None) -> dict:
         "rows": len(df),
         "class_distribution": class_dist
     }
+
+
+def generate_unlabelled_traffic(output_path: str = None) -> dict:
+    """
+    Generates a realistic stream of raw, unlabelled network flow features (34 canonical features).
+    Contains strictly NO 'label' and NO 'class_name' columns.
+    The Sentinel AI models must classify threats and anomalies autonomously.
+    """
+    if output_path is None:
+        output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/sentinel_unlabelled_traffic.csv'))
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Generate full dataset
+    res = generate_dataset(output_path=output_path)
+    df = pd.read_csv(output_path)
+
+    # Strip out ground-truth columns to make it completely unlabelled
+    feature_cols = [c for c in df.columns if c not in ['label', 'class_name']]
+    unlabelled_df = df[feature_cols]
+
+    unlabelled_df.to_csv(output_path, index=False)
+
+    return {
+        "path": output_path,
+        "rows": len(unlabelled_df),
+        "feature_count": len(feature_cols),
+        "is_unlabelled": True
+    }
+
